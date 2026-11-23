@@ -1,5 +1,27 @@
 # Changelog
 
+- **2026-11-23** -- Engine patches `0017`-`0019` (rebuild the image to pick them up): the prompt chunk's fused
+  attention kernel, which 1.1.9 had and 1.3.0 dropped, and the latent write's PDL wait. `0017` brings
+  `chunks_32_fp8_paged_fused` back beside `chunks_wide` in `common/mla.cuh` (the 1.1.9 kernel, with the two
+  constants 1.3.0 lacks -- `CHUNK_THREADS` and `chunk_threads` -- and ordinary loads rather than `__ldg`, since it
+  reads rows another kernel wrote), the six wrappers in `glm_glue_attn.cuh`, the `Partials.rows` / `fuses()` /
+  `fused()` wiring, and the 1.1.9 rule that a prompt pass reserves partials for `chunks_wide` alone
+  (`cuda_state.zig`); `0018` gives `tf_glm_lat_write_fp8_paged` the `glm_pdl::enter()` it never had, which touches
+  every E4M3-page latent write including decode, so it is its own patch. It is a correctness fix, not a speed one: without it, TensorFold's own
+  `zig build test-glm-pdl-scan` fails on this stack ("tf_glm_lat_write_fp8_paged must open with
+  glm_pdl::enter()") and with it the scan passes; `0019` is the test
+  that the fused path and `chunks` + `tf_glm_merge` agree byte for byte (three cache forms, four row counts).
+  On this pair (2026-11-23, same window, `bench2.py`, greedy, thinking off, `L2PF=1` as this base defaults):
+  16K prefill 1,209 -> 1,323 tok/s and 64K 1,226 -> 1,359, single-stream decode 37.7 -> 37.9, mixed 50K prompt
+  ttft 60.73 -> 55.22 s, two prefills at once 26.3/49.8 -> 24.1/45.4 s, greedy `token_sha` identical, 4-stream
+  decode equal over three trials, and the 90K cache-hit path unchanged (0.849 -> 0.839 s median of five).
+  On the same image (`4694f0e88d7a`): `tf-cuda-test glm-ref` passes, including the in-kernel merge against
+  `chunks` + `tf_glm_merge` byte for byte at 12 calls; a 35,941-token fixed prompt returns the same
+  `token_sha` (15a05b14b052) on both builds; paired NLL is 1.50387 on both and draft acceptance is 535/318 on
+  both. Memory: the model side drops 84.18 -> 83.84 GiB because a prompt pass now reserves partials for
+  `chunks_wide` alone; the prompt cache reading 10.0 -> 10.4 GiB is one start's observation (README notes
+  start-to-start cache variation of about 1 GiB).
+
 - **2026-11-21** -- `L2PF` defaults to `1` and is always passed to the ranks: on TensorFold 1.3.0 an unset
   `TF_GLM_L2PF` means on for a GB10 (`cuda_l2pf.zig`), so every 1.3.0 start already prefetched and `L2PF=0` could not
   turn it off (`TF_GLM_L2PF` is recipe-managed, so exporting it did not help either). Serving is unchanged at the

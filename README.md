@@ -357,6 +357,13 @@ the [RTX PRO 6000 recipe](https://github.com/MiaAI-Lab/GLM-5.3-Flash-2x-RTX-PRO-
 | 0120 | `TF_EXTRA_EOS=<token>[,<token>...]` (`EXTRA_EOS`, on by default with `<\|assistant\|>`): the named tokens end a reply like the checkpoint's EOS ids and leave the reply as they do. A name the tokenizer does not hold refuses the start; unset, the EOS list is the checkpoint's |
 | 0121 | `TF_THINK_OFF_SPLIT=<tokens>` (`THINK_OFF_SPLIT`, opt-in, off by default (`THINK_OFF_SPLIT=0`; 1024 is the hold the author measured)): a thinking-off chat reply that writes the think close token within the hold is split like a thinking reply, whole and streamed alike (a stream holds its content until the token, the hold or the end). A close after the hold stays text; raw completions, the JSON channel and logprobs requests are never split. Tests: `zig build test-think-off-split-host` |
 
+**On the 1.3.0 pin** (`81de26f6`, the current `patches/engine/` stack) the numbering above is the earlier 121-patch
+line: `0001`-`0016` are the 1.3.0 stack, and `0017`-`0019` are this pair's fused prompt chunk kernel, the latent
+write's PDL wait and their test -- 1.1.9's `chunks_32_fp8_paged_fused` (one kernel where 1.3.0 runs
+`chunks_32_fp8_paged` + `merge`), the `glm_pdl::enter()` that `tf_glm_lat_write_fp8_paged` never had (a correctness fix:
+`zig build test-glm-pdl-scan` fails without it on this stack), and a test that both attention paths agree
+byte for byte.
+
 Every default-on patch was A/B tested against the image before it: greedy replies identical plus a measured gain.
 
 ## 4 Sparks (TP=4, experimental)
