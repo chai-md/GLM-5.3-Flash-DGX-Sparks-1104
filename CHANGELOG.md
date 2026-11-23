@@ -1,5 +1,15 @@
 # Changelog
 
+- **2026-11-24** -- Engine patch `0019` adds the fused prompt-chunk kernel (`tf_glm_chunks_16/32[_fp8][_paged]_fused`):
+  when a sparse call's partials would not fit the pool, one block a (row, HB heads) loops the row's chunks and
+  merges in the kernel, and a prefill now funds one dense pass's partials instead of every sparse call's. The fused
+  form is sparse only; `fetch8`/`store8` move into `common/mla.cuh` so both paths read the E4M3 cache through one
+  implementation. `0020` extends `tf-cuda-test glm-ref` with `fusedSame` (three sparse cache forms, four row counts,
+  a count-0 row left as 0xff, both buffers filled first, byte for byte against `chunks_wide` + merge). Measured on one GB10 pair, `KV=fp8` with
+  the page pool, `L2PF=1`, `0001`-`0018` applied, three cold prefill runs per size (medians): 16K 1,294.0 -> 1,340.4
+  tok/s (+3.6%), 64K 1,310.7 -> 1,350.9 (+3.1%); TensorFold 1.2.4 on the same pair, same launcher, reads 1,336.4 /
+  1,349.9 / 1,356.8 (16K/64K/32K), so the stack is back at the 1.2.4 prefill level.
+
 - **2026-11-21** -- `L2PF` defaults to `1` and is always passed to the ranks: on TensorFold 1.3.0 an unset
   `TF_GLM_L2PF` means on for a GB10 (`cuda_l2pf.zig`), so every 1.3.0 start already prefetched and `L2PF=0` could not
   turn it off (`TF_GLM_L2PF` is recipe-managed, so exporting it did not help either). Serving is unchanged at the
